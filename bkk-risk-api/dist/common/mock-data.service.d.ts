@@ -1,6 +1,11 @@
+import { OnModuleInit } from '@nestjs/common';
 import { Bottleneck, RankingEntry, Remediation, RiskPoint } from './models';
-export declare class MockDataService {
-    private readonly _riskPoints;
+import { KmlRiskPointSource } from './kml-risk-point-source.service';
+export declare class MockDataService implements OnModuleInit {
+    private readonly kmlRiskPointSource;
+    private _riskPoints;
+    constructor(kmlRiskPointSource: KmlRiskPointSource);
+    onModuleInit(): Promise<void>;
     private readonly _remediations;
     private readonly _bottlenecks;
     private _ranking;

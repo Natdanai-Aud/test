@@ -1,0 +1,798 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "BKK Data Base API",
+    "description": "API contract สำหรับระบบจัดการจุดเสี่ยงอุบัติเหตุ กรุงเทพมหานคร — ดูแผนที่จุดเสี่ยง + เลือก/กรองข้อมูล , ดูอันดับ Top 10 , ดูรายละเอียดจุดเสี่ยง, ติดตามการแก้ไข, ดูจุดคอขวดจราจร แหล่งข้อมูล: data.bangkok.go.th (ชุด 100-risk-map, crosswalk_50), ThaiRSC, iTIC และสำนักการจราจรและขนส่ง กทม. Contract นี้รันเป็น mock API ได้ด้วย Stoplight Prism โดยไม่ต้องมี backend จริง",
+    "version": "0.2.0",
+    "contact": {
+      "name": "Impact Inc"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "NestJS development server"
+    },
+    {
+      "url": "http://127.0.0.1:4010",
+      "description": "Stoplight Prism mock server"
+    }
+  ],
+  "tags": [
+    { "name": "risk-points", "description": "จุดเสี่ยงอุบัติเหตุ 100 คลัสเตอร์ และแผนที่" },
+    { "name": "ranking", "description": "การจัดอันดับความเสี่ยงและ Top 10" },
+    { "name": "remediation", "description": "การติดตามสถานะการแก้ไขของสำนักการจราจรและขนส่ง" },
+    { "name": "bottlenecks", "description": "จุดคอขวดจราจร (ข้อมูลสดจาก iTIC)" },
+    { "name": "admin", "description": "งานฝั่งเจ้าหน้าที่ (ต้องเข้าสู่ระบบ)" }
+  ],
+  "paths": {
+    "/api/risk-points": {
+      "get": {
+        "operationId": "RiskPointsController_findAll",
+        "tags": ["risk-points"],
+        "summary": "ค้นหาจุดเสี่ยงอุบัติเหตุสำหรับแสดงบนแผนที่",
+        "description": "รองรับ use case ดูแผนที่จุดเสี่ยง และ เลือก/กรองข้อมูล ไม่ส่ง parameter ใดเลย = คืนจุดเสี่ยงทั้ง 100 จุด (ภาพรวมทั้ง กทม.)ข้อมูลอ่านจากฐานข้อมูลของระบบที่เจ้าหน้าที่นำเข้าไว้แล้ว ไม่เรียกแหล่งข้อมูลภายนอกสด",
+        "parameters": [
+          { "$ref": "#/components/parameters/DistrictQuery" },
+          { "$ref": "#/components/parameters/RiskLevelQuery" }
+        ],
+        "responses": {
+          "200": {
+            "description": "รายการจุดเสี่ยงที่ผ่านเงื่อนไขการกรอง (อาจเป็น array ว่างถ้าไม่มีผลลัพธ์)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/RiskPoint" }
+                },
+                "example": [
+                  {
+                    "riskPointId": "RP-001",
+                    "clusterRank": 1,
+                    "nameTh": "แยกรัชดา-ลาดพร้าว",
+                    "district": "จตุจักร",
+                    "road": "ถนนรัชดาภิเษก",
+                    "lat": 13.8065,
+                    "lng": 100.5745,
+                    "accidentCount": 412,
+                    "fatalities": 9,
+                    "injuries": 388,
+                    "riskLevel": "CRITICAL",
+                    "dataYearRange": "2566-2568"
+                  },
+                  {
+                    "riskPointId": "RP-014",
+                    "clusterRank": 14,
+                    "nameTh": "แยกอโศก-เพชรบุรี",
+                    "district": "ห้วยขวาง",
+                    "road": "ถนนอโศกมนตรี",
+                    "lat": 13.7375,
+                    "lng": 100.5601,
+                    "accidentCount": 210,
+                    "fatalities": 3,
+                    "injuries": 198,
+                    "riskLevel": "HIGH",
+                    "dataYearRange": "2566-2568"
+                  }
+                ]
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/risk-points/ranking": {
+      "get": {
+        "operationId": "RankingController_findTop",
+        "tags": ["ranking"],
+        "summary": "ดูอันดับจุดเสี่ยง (ค่าเริ่มต้น Top 10)",
+        "description": "รองรับ use case ดูอันดับ Top 10 — ผลลัพธ์มาจากตารางอันดับที่เจ้าหน้าที่สั่งคำนวณไว้แล้ว ไม่ได้คำนวณสดตอนเรียก ระบุ district = ดูเฉพาะพื้นที่ / ไม่ระบุ = ภาพรวมทั้ง กทม. (ตรงกับกิ่ง ระบุพิกัด/ไม่ระบุพิกัด ใน Activity Diagram)",
+        "parameters": [
+          { "$ref": "#/components/parameters/DistrictQuery" },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "จำนวนอันดับที่ต้องการ",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "รายการอันดับความเสี่ยงเรียงจากมากไปน้อย",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["rankedAt", "items"],
+                  "properties": {
+                    "rankedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "เวลาที่ระบบคำนวณอันดับรอบล่าสุด"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/RankingEntry" }
+                    }
+                  }
+                },
+                "example": {
+                  "rankedAt": "2026-08-01T02:15:00+07:00",
+                  "items": [
+                    {
+                      "rank": 1,
+                      "riskPointId": "RP-001",
+                      "nameTh": "แยกรัชดา-ลาดพร้าว",
+                      "district": "จตุจักร",
+                      "riskScore": 96.4,
+                      "accidentCount": 412,
+                      "fatalities": 9
+                    },
+                    {
+                      "rank": 2,
+                      "riskPointId": "RP-007",
+                      "nameTh": "แยกบางนา",
+                      "district": "บางนา",
+                      "riskScore": 91.2,
+                      "accidentCount": 377,
+                      "fatalities": 11
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/risk-points/{riskPointId}": {
+      "get": {
+        "operationId": "RiskPointsController_findOne",
+        "tags": ["risk-points"],
+        "summary": "ดูรายละเอียดจุดเสี่ยง พร้อมสาเหตุและแนวทางแก้ไข",
+        "description": "ตาม Activity Diagram ฟีเจอร์ 1: ผู้ใช้เลือกจุดบนแผนที่ → ระบบดึงสาเหตุและแนวทางแก้ไขมาแสดงฟิลด์ causes และ solutions มาจากเอกสาร Solutions ของ data.bangkok.go.th ซึ่งเผยแพร่เป็นไฟล์ PDF (แบ่งช่วงจุดที่ 1-20, 21-40, ...) จึงได้มาจากการ extract PDF ไม่ใช่ API ต้นทาง — field sourceDocument ชี้กลับไปยังไฟล์ต้นฉบับเสมอ",
+        "parameters": [{ "$ref": "#/components/parameters/RiskPointId" }],
+        "responses": {
+          "200": {
+            "description": "รายละเอียดจุดเสี่ยง",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RiskPointDetail" },
+                "example": {
+                  "riskPointId": "RP-001",
+                  "clusterRank": 1,
+                  "nameTh": "แยกรัชดา-ลาดพร้าว",
+                  "district": "จตุจักร",
+                  "road": "ถนนรัชดาภิเษก",
+                  "lat": 13.8065,
+                  "lng": 100.5745,
+                  "accidentCount": 412,
+                  "fatalities": 9,
+                  "injuries": 388,
+                  "riskLevel": "CRITICAL",
+                  "dataYearRange": "2566-2568",
+                  "causes": [
+                    {
+                      "description": "ทัศนวิสัยบริเวณทางแยกถูกบดบังด้วยตอม่อรถไฟฟ้า",
+                      "sourceDocument": "660201-solutions-1-20.pdf"
+                    },
+                    {
+                      "description": "รถจักรยานยนต์ย้อนศรบริเวณจุดกลับรถ",
+                      "sourceDocument": "660201-solutions-1-20.pdf"
+                    }
+                  ],
+                  "solutions": [
+                    {
+                      "description": "ติดตั้งกระจกโค้งและไฟส่องสว่างเพิ่มบริเวณทางแยก",
+                      "sourceDocument": "660201-solutions-1-20.pdf"
+                    }
+                  ],
+                  "remediation": {
+                    "remediationId": "RM-001",
+                    "riskPointId": "RP-001",
+                    "status": "IN_PROGRESS",
+                    "isDelayed": true,
+                    "responsibleAgency": "สำนักการจราจรและขนส่ง",
+                    "startedAt": "2026-03-10",
+                    "dueAt": "2026-06-30",
+                    "completedAt": null,
+                    "note": "รอผลการจัดซื้อจัดจ้างอุปกรณ์ไฟส่องสว่าง",
+                    "updatedAt": "2026-07-28T14:05:00+07:00"
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/remediations": {
+      "get": {
+        "operationId": "RemediationController_findAll",
+        "tags": ["remediation"],
+        "summary": "ติดตามสถานะการแก้ไขของทุกจุดเสี่ยง",
+        "description": "รองรับ use case ติดตามการแก้ไข ตาม Activity Diagram ระบบต้องแยกงานที่ล่าช้าออกจากงานปกติ — ใช้ query `delayed=true` เพื่อดึงเฉพาะงานล่าช้า (หน้าจอแสดงผลด้วยสีแดง)",
+        "parameters": [
+          { "$ref": "#/components/parameters/DistrictQuery" },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "กรองตามสถานะงาน",
+            "schema": { "$ref": "#/components/schemas/RemediationStatus" }
+          },
+          {
+            "name": "delayed",
+            "in": "query",
+            "required": false,
+            "description": "true = เฉพาะงานที่เลยกำหนดแล้วยังไม่เสร็จ",
+            "schema": { "type": "boolean", "default": false }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "รายการสถานะการแก้ไข",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Remediation" }
+                },
+                "example": [
+                  {
+                    "remediationId": "RM-001",
+                    "riskPointId": "RP-001",
+                    "status": "IN_PROGRESS",
+                    "isDelayed": true,
+                    "responsibleAgency": "สำนักการจราจรและขนส่ง",
+                    "startedAt": "2026-03-10",
+                    "dueAt": "2026-06-30",
+                    "completedAt": null,
+                    "note": "รอผลการจัดซื้อจัดจ้างอุปกรณ์ไฟส่องสว่าง",
+                    "updatedAt": "2026-07-28T14:05:00+07:00"
+                  },
+                  {
+                    "remediationId": "RM-007",
+                    "riskPointId": "RP-007",
+                    "status": "COMPLETED",
+                    "isDelayed": false,
+                    "responsibleAgency": "สำนักการจราจรและขนส่ง",
+                    "startedAt": "2026-01-15",
+                    "dueAt": "2026-04-30",
+                    "completedAt": "2026-04-22",
+                    "note": "ติดตั้งสัญญาณไฟคนข้ามแบบกดปุ่มแล้วเสร็จ",
+                    "updatedAt": "2026-04-22T16:40:00+07:00"
+                  }
+                ]
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/bottlenecks": {
+      "get": {
+        "operationId": "BottlenecksController_findAll",
+        "tags": ["bottlenecks"],
+        "summary": "ค้นหาจุดคอขวดจราจร",
+        "description": "รองรับ use case ดูจุดคอขวดจราจรตาม Activity Diagram ระดับความติดขัดแบ่งตามสีที่แสดงบนแผนที่: NORMAL = ไม่แสดงสี, CONGESTED = สีส้ม, BLOCKED = สีแดงถ้าผู้ใช้ไม่อนุญาตให้เข้าถึงตำแหน่ง ให้เรียกโดยไม่ส่ง lat/lng ระบบจะคืนภาพรวมทั้งเขตแทน (ตรงกับกิ่ง ขอสิทธิ์เข้าถึงตำแหน่งผู้ใช้ ใน diagram) ข้อมูลความเร็วดึงสดจาก iTIC จึงมีโอกาสตอบ 502 เมื่อต้นทางล่ม",
+        "parameters": [
+          { "$ref": "#/components/parameters/DistrictQuery" },
+          {
+            "name": "congestionLevel",
+            "in": "query",
+            "required": false,
+            "description": "กรองตามระดับความติดขัด",
+            "schema": { "$ref": "#/components/schemas/CongestionLevel" }
+          },
+          {
+            "name": "lat",
+            "in": "query",
+            "required": false,
+            "description": "ละติจูดตำแหน่งผู้ใช้ (ต้องส่งคู่กับ lng)",
+            "schema": { "type": "number", "format": "double", "example": 13.7563 }
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": false,
+            "description": "ลองจิจูดตำแหน่งผู้ใช้ (ต้องส่งคู่กับ lat)",
+            "schema": { "type": "number", "format": "double", "example": 100.5018 }
+          },
+          {
+            "name": "radiusKm",
+            "in": "query",
+            "required": false,
+            "description": "รัศมีการค้นหาเป็นกิโลเมตร",
+            "schema": { "type": "number", "format": "double", "default": 5, "maximum": 50 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "รายการจุดคอขวดจราจรพร้อมสถานะล่าสุด",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Bottleneck" }
+                },
+                "example": [
+                  {
+                    "bottleneckId": "BN-003",
+                    "nameTh": "หน้าห้างเซ็นทรัลลาดพร้าว",
+                    "district": "จตุจักร",
+                    "road": "ถนนพหลโยธิน",
+                    "lat": 13.8163,
+                    "lng": 100.5606,
+                    "congestionLevel": "BLOCKED",
+                    "avgSpeedKmh": 6.5,
+                    "observedAt": "2026-08-07T17:45:00+07:00"
+                  },
+                  {
+                    "bottleneckId": "BN-011",
+                    "nameTh": "ทางลงด่วนพระราม 9",
+                    "district": "ห้วยขวาง",
+                    "road": "ถนนพระราม 9",
+                    "lat": 13.7566,
+                    "lng": 100.5661,
+                    "congestionLevel": "CONGESTED",
+                    "avgSpeedKmh": 18.2,
+                    "observedAt": "2026-08-07T17:45:00+07:00"
+                  }
+                ]
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamError" }
+        }
+      }
+    },
+    "/api/admin/imports": {
+      "post": {
+        "operationId": "AdminController_createImport",
+        "tags": ["admin"],
+        "summary": "นำเข้าข้อมูลดิบและทำความสะอาดข้อมูล (เจ้าหน้าที่)",
+        "description": "รองรับ use case นำเข้าข้อมูลดิบ — ครอบคลุมขั้นที่ 1-3 ของ Risk Ranking Workflow (Raw Data → Data Cleaning → Database Storage) ทำงานแบบ synchronous: รอจนนำเข้าเสร็จแล้วคืนสรุปผลทันที (ข้อมูลมีเพดาน ~100 แถว ใช้เวลาไม่กี่วินาที)",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateImportRequest" },
+              "example": {
+                "source": "THAIRSC",
+                "datasetUrl": "https://data.bangkok.go.th/dataset/100-risk-map",
+                "note": "รอบข้อมูลประจำเดือนสิงหาคม 2569"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "นำเข้าและทำความสะอาดข้อมูลเสร็จสิ้น",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ImportResult" },
+                "example": {
+                  "source": "THAIRSC",
+                  "totalRows": 100,
+                  "cleanedRows": 97,
+                  "rejectedRows": 3,
+                  "startedAt": "2026-08-07T09:31:00+07:00",
+                  "finishedAt": "2026-08-07T09:31:04+07:00"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "502": { "$ref": "#/components/responses/UpstreamError" }
+        }
+      }
+    },
+    "/api/admin/ranking/rebuild": {
+      "post": {
+        "operationId": "AdminController_rebuildRanking",
+        "tags": ["admin"],
+        "summary": "สั่งคำนวณอันดับความเสี่ยงใหม่ (เจ้าหน้าที่)",
+        "description": "รองรับ use case จัดอันดับความเสี่ยง — ครอบคลุมขั้นที่ 4-5 ของ Risk Ranking Workflow (Risk Ranking Processing → Top 10 Output)\nทำงานแบบ synchronous: คำนวณจากข้อมูลในฐานข้อมูล (100 จุด) แล้วคืนผลทันที",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "201": {
+            "description": "คำนวณอันดับใหม่เสร็จสิ้น — ผลอ่านได้ที่ GET /api/risk-points/ranking",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RankingResult" },
+                "example": {
+                  "rankedAt": "2026-08-07T09:32:00+07:00",
+                  "pointsProcessed": 100
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/remediations/{remediationId}": {
+      "patch": {
+        "operationId": "AdminController_updateRemediation",
+        "tags": ["admin"],
+        "summary": "อัปเดตสถานะงานแก้ไข (เจ้าหน้าที่)",
+        "description": "รองรับ use case อัปเดตสถานะงาน — ฟิลด์ isDelayed ระบบคำนวณเองจาก dueAt เทียบกับวันปัจจุบัน เจ้าหน้าที่แก้ไม่ได้",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/RemediationId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateRemediationRequest" },
+              "example": {
+                "status": "COMPLETED",
+                "completedAt": "2026-08-05",
+                "note": "ติดตั้งกระจกโค้งและไฟส่องสว่างแล้วเสร็จ ตรวจรับงานเรียบร้อย"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "อัปเดตสถานะสำเร็จ",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Remediation" },
+                "example": {
+                  "remediationId": "RM-001",
+                  "riskPointId": "RP-001",
+                  "status": "COMPLETED",
+                  "isDelayed": false,
+                  "responsibleAgency": "สำนักการจราจรและขนส่ง",
+                  "startedAt": "2026-03-10",
+                  "dueAt": "2026-06-30",
+                  "completedAt": "2026-08-05",
+                  "note": "ติดตั้งกระจกโค้งและไฟส่องสว่างแล้วเสร็จ ตรวจรับงานเรียบร้อย",
+                  "updatedAt": "2026-08-07T09:33:00+07:00"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "โทเคนของเจ้าหน้าที่ ใช้กับ endpoint กลุ่ม admin เท่านั้น"
+      }
+    },
+    "parameters": {
+      "RiskPointId": {
+        "name": "riskPointId",
+        "in": "path",
+        "required": true,
+        "description": "รหัสจุดเสี่ยง",
+        "schema": { "type": "string", "example": "RP-001" }
+      },
+      "RemediationId": {
+        "name": "remediationId",
+        "in": "path",
+        "required": true,
+        "description": "รหัสงานแก้ไข",
+        "schema": { "type": "string", "example": "RM-001" }
+      },
+      "DistrictQuery": {
+        "name": "district",
+        "in": "query",
+        "required": false,
+        "description": "ชื่อเขตในกรุงเทพมหานคร (ไม่ระบุ = ทุกเขต)",
+        "schema": { "type": "string", "example": "จตุจักร" }
+      },
+      "RiskLevelQuery": {
+        "name": "riskLevel",
+        "in": "query",
+        "required": false,
+        "description": "กรองตามระดับความเสี่ยง",
+        "schema": { "$ref": "#/components/schemas/RiskLevel" }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "พารามิเตอร์ไม่ถูกต้องหรือไม่ครบ",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "statusCode": 400,
+              "error": "Bad Request",
+              "message": "ต้องส่ง lng มาคู่กับ lat เสมอ"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "ยังไม่ได้เข้าสู่ระบบหรือโทเคนหมดอายุ",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "statusCode": 401,
+              "error": "Unauthorized",
+              "message": "กรุณาเข้าสู่ระบบก่อนใช้งาน"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "ไม่มีสิทธิ์ใช้งานส่วนของเจ้าหน้าที่",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "statusCode": 403,
+              "error": "Forbidden",
+              "message": "เฉพาะเจ้าหน้าที่เท่านั้นที่ใช้งานส่วนนี้ได้"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "ไม่พบข้อมูลที่ค้นหา",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "statusCode": 404,
+              "error": "Not Found",
+              "message": "ไม่พบจุดเสี่ยงรหัส RP-999"
+            }
+          }
+        }
+      },
+      "UpstreamError": {
+        "description": "เชื่อมต่อแหล่งข้อมูลภายนอกไม่ได้ (data.bangkok.go.th, ThaiRSC หรือ iTIC)",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "statusCode": 502,
+              "error": "Bad Gateway",
+              "message": "ไม่สามารถเชื่อมต่อแหล่งข้อมูล iTIC ได้ กรุณาลองใหม่อีกครั้ง"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "RiskLevel": {
+        "type": "string",
+        "description": "ระดับความเสี่ยงของจุด",
+        "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+        "example": "CRITICAL"
+      },
+      "RiskPoint": {
+        "type": "object",
+        "required": [
+          "riskPointId",
+          "clusterRank",
+          "nameTh",
+          "district",
+          "lat",
+          "lng",
+          "accidentCount",
+          "riskLevel"
+        ],
+        "properties": {
+          "riskPointId": { "type": "string", "example": "RP-001" },
+          "clusterRank": {
+            "type": "integer",
+            "description": "ลำดับคลัสเตอร์ 1-100 ตามชุดข้อมูลต้นทาง",
+            "example": 1
+          },
+          "nameTh": { "type": "string", "example": "แยกรัชดา-ลาดพร้าว" },
+          "district": { "type": "string", "example": "จตุจักร" },
+          "road": { "type": "string", "example": "ถนนรัชดาภิเษก" },
+          "lat": { "type": "number", "format": "double", "example": 13.8065 },
+          "lng": { "type": "number", "format": "double", "example": 100.5745 },
+          "accidentCount": { "type": "integer", "example": 412 },
+          "fatalities": { "type": "integer", "example": 9 },
+          "injuries": { "type": "integer", "example": 388 },
+          "riskLevel": { "$ref": "#/components/schemas/RiskLevel" },
+          "dataYearRange": {
+            "type": "string",
+            "description": "ช่วงปีของข้อมูลที่ใช้คำนวณ (ชุดข้อมูลเป็นสถิติย้อนหลัง 3 ปี)",
+            "example": "2566-2568"
+          }
+        }
+      },
+      "SourcedNote": {
+        "type": "object",
+        "description": "ข้อความที่ extract มาจากเอกสาร PDF ของ data.bangkok.go.th พร้อมอ้างอิงไฟล์ต้นฉบับ",
+        "required": ["description", "sourceDocument"],
+        "properties": {
+          "description": { "type": "string", "example": "ทัศนวิสัยบริเวณทางแยกถูกบดบังด้วยตอม่อรถไฟฟ้า" },
+          "sourceDocument": {
+            "type": "string",
+            "description": "ชื่อไฟล์ PDF ต้นฉบับจาก data.bangkok.go.th ที่ extract ข้อมูลนี้ออกมา",
+            "example": "660201-solutions-1-20.pdf"
+          }
+        }
+      },
+      "RiskPointDetail": {
+        "allOf": [
+          { "$ref": "#/components/schemas/RiskPoint" },
+          {
+            "type": "object",
+            "required": ["causes", "solutions"],
+            "properties": {
+              "causes": {
+                "type": "array",
+                "description": "สาเหตุการเกิดอุบัติเหตุของจุดนี้",
+                "items": { "$ref": "#/components/schemas/SourcedNote" }
+              },
+              "solutions": {
+                "type": "array",
+                "description": "แนวทางการแก้ไขของจุดนี้",
+                "items": { "$ref": "#/components/schemas/SourcedNote" }
+              },
+              "remediation": {
+                "allOf": [{ "$ref": "#/components/schemas/Remediation" }],
+                "nullable": true,
+                "description": "สถานะการแก้ไขล่าสุด เป็น null ถ้ายังไม่มีการเปิดงาน"
+              }
+            }
+          }
+        ]
+      },
+      "RankingEntry": {
+        "type": "object",
+        "required": ["rank", "riskPointId", "nameTh", "riskScore"],
+        "properties": {
+          "rank": { "type": "integer", "example": 1 },
+          "riskPointId": { "type": "string", "example": "RP-001" },
+          "nameTh": { "type": "string", "example": "แยกรัชดา-ลาดพร้าว" },
+          "district": { "type": "string", "example": "จตุจักร" },
+          "riskScore": {
+            "type": "number",
+            "format": "double",
+            "description": "คะแนนความเสี่ยง 0-100 คำนวณจากจำนวนอุบัติเหตุ ผู้เสียชีวิต และผู้บาดเจ็บ",
+            "example": 96.4
+          },
+          "accidentCount": { "type": "integer", "example": 412 },
+          "fatalities": { "type": "integer", "example": 9 }
+        }
+      },
+      "RemediationStatus": {
+        "type": "string",
+        "description": "สถานะงานแก้ไขของสำนักการจราจรและขนส่ง",
+        "enum": ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"],
+        "example": "IN_PROGRESS"
+      },
+      "Remediation": {
+        "type": "object",
+        "required": ["remediationId", "riskPointId", "status", "isDelayed"],
+        "properties": {
+          "remediationId": { "type": "string", "example": "RM-001" },
+          "riskPointId": { "type": "string", "example": "RP-001" },
+          "status": { "$ref": "#/components/schemas/RemediationStatus" },
+          "isDelayed": {
+            "type": "boolean",
+            "description": "ระบบคำนวณเองจาก dueAt เทียบวันปัจจุบัน — true = งานล่าช้า (แสดงผลด้วยสีแดง)",
+            "readOnly": true,
+            "example": true
+          },
+          "responsibleAgency": { "type": "string", "example": "สำนักการจราจรและขนส่ง" },
+          "startedAt": { "type": "string", "format": "date", "nullable": true },
+          "dueAt": { "type": "string", "format": "date", "nullable": true },
+          "completedAt": { "type": "string", "format": "date", "nullable": true },
+          "note": { "type": "string", "nullable": true },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "UpdateRemediationRequest": {
+        "type": "object",
+        "properties": {
+          "status": { "$ref": "#/components/schemas/RemediationStatus" },
+          "dueAt": { "type": "string", "format": "date", "nullable": true },
+          "completedAt": { "type": "string", "format": "date", "nullable": true },
+          "note": { "type": "string", "nullable": true }
+        }
+      },
+      "CongestionLevel": {
+        "type": "string",
+        "description": "ระดับความติดขัด ตามสีที่แสดงบนแผนที่ใน Activity Diagram — NORMAL คือไม่แสดงสี, CONGESTED คือสีส้ม, BLOCKED คือสีแดง",
+        "enum": ["NORMAL", "CONGESTED", "BLOCKED"],
+        "example": "BLOCKED"
+      },
+      "Bottleneck": {
+        "type": "object",
+        "required": ["bottleneckId", "nameTh", "district", "lat", "lng", "congestionLevel", "observedAt"],
+        "properties": {
+          "bottleneckId": { "type": "string", "example": "BN-003" },
+          "nameTh": { "type": "string", "example": "หน้าห้างเซ็นทรัลลาดพร้าว" },
+          "district": { "type": "string", "example": "จตุจักร" },
+          "road": { "type": "string", "example": "ถนนพหลโยธิน" },
+          "lat": { "type": "number", "format": "double", "example": 13.8163 },
+          "lng": { "type": "number", "format": "double", "example": 100.5606 },
+          "congestionLevel": { "$ref": "#/components/schemas/CongestionLevel" },
+          "avgSpeedKmh": {
+            "type": "number",
+            "format": "double",
+            "description": "ความเร็วเฉลี่ยล่าสุดจาก iTIC",
+            "example": 6.5
+          },
+          "observedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateImportRequest": {
+        "type": "object",
+        "required": ["source"],
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": ["THAIRSC", "ITIC", "BMA_OPEN_DATA"],
+            "example": "THAIRSC"
+          },
+          "datasetUrl": {
+            "type": "string",
+            "format": "uri",
+            "example": "https://data.bangkok.go.th/dataset/100-risk-map"
+          },
+          "note": { "type": "string", "nullable": true }
+        }
+      },
+      "ImportResult": {
+        "type": "object",
+        "required": ["source", "totalRows", "cleanedRows", "rejectedRows", "startedAt", "finishedAt"],
+        "properties": {
+          "source": { "type": "string", "example": "THAIRSC" },
+          "totalRows": { "type": "integer", "description": "จำนวนแถวข้อมูลดิบทั้งหมด", "example": 100 },
+          "cleanedRows": {
+            "type": "integer",
+            "description": "จำนวนแถวที่ผ่านขั้น Data Cleaning และบันทึกลงฐานข้อมูล",
+            "example": 97
+          },
+          "rejectedRows": {
+            "type": "integer",
+            "description": "จำนวนแถวที่ถูกตัดทิ้งเพราะข้อมูลไม่สมบูรณ์",
+            "example": 3
+          },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "finishedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "RankingResult": {
+        "type": "object",
+        "required": ["rankedAt", "pointsProcessed"],
+        "properties": {
+          "rankedAt": { "type": "string", "format": "date-time" },
+          "pointsProcessed": { "type": "integer", "example": 100 }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["statusCode", "message"],
+        "properties": {
+          "statusCode": { "type": "integer", "example": 400 },
+          "error": { "type": "string", "example": "Bad Request" },
+          "message": { "type": "string", "example": "ต้องส่ง lng มาคู่กับ lat เสมอ" }
+        }
+      }
+    }
+  }
+}

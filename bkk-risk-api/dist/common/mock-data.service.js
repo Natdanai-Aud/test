@@ -5,10 +5,16 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MockDataService = void 0;
 const common_1 = require("@nestjs/common");
 const enums_1 = require("./enums");
+const kml_risk_point_source_service_1 = require("./kml-risk-point-source.service");
+const risk_statistics_1 = require("./risk-statistics");
+const risk_point_pdf_details_1 = require("../data/risk-point-pdf-details");
 function seedRiskPoints() {
     const districts = [
         'จตุจักร',
@@ -25,16 +31,7 @@ function seedRiskPoints() {
     const points = Array.from({ length: 100 }, (_, index) => {
         const rank = index + 1;
         const district = districts[index % districts.length];
-        const accidents = Math.max(58, 420 - index * 3);
-        const fatalities = Math.max(1, 12 - Math.floor(index / 12));
-        const injuries = Math.max(40, 390 - index * 3);
-        const riskLevel = accidents >= 300
-            ? enums_1.RiskLevel.CRITICAL
-            : accidents >= 220
-                ? enums_1.RiskLevel.HIGH
-                : accidents >= 130
-                    ? enums_1.RiskLevel.MEDIUM
-                    : enums_1.RiskLevel.LOW;
+        const statistics = (0, risk_statistics_1.deriveRiskStatistics)(rank);
         return {
             riskPointId: `RP-${String(rank).padStart(3, '0')}`,
             clusterRank: rank,
@@ -43,41 +40,14 @@ function seedRiskPoints() {
             road: `ถนนจำลองสาย ${rank}`,
             lat: 13.70 + (index % 20) * 0.008,
             lng: 100.47 + (index % 20) * 0.007,
-            accidentCount: accidents,
-            fatalities,
-            injuries,
-            riskLevel,
+            accidentCount: statistics.accidentCount,
+            fatalities: statistics.fatalities,
+            injuries: statistics.injuries,
+            riskLevel: statistics.riskLevel,
             dataYearRange: '2566-2568',
             causes: [],
             solutions: [],
         };
-    });
-    Object.assign(points[0], {
-        nameTh: 'แยกรัชดา-ลาดพร้าว',
-        district: 'จตุจักร',
-        road: 'ถนนรัชดาภิเษก',
-        lat: 13.8065,
-        lng: 100.5745,
-        accidentCount: 412,
-        fatalities: 9,
-        injuries: 388,
-        riskLevel: enums_1.RiskLevel.CRITICAL,
-        causes: [
-            {
-                description: 'ทัศนวิสัยบริเวณทางแยกถูกบดบังด้วยตอม่อรถไฟฟ้า',
-                sourceDocument: '660201-solutions-1-20.pdf',
-            },
-            {
-                description: 'รถจักรยานยนต์ย้อนศรบริเวณจุดกลับรถ',
-                sourceDocument: '660201-solutions-1-20.pdf',
-            },
-        ],
-        solutions: [
-            {
-                description: 'ติดตั้งกระจกโค้งและไฟส่องสว่างเพิ่มบริเวณทางแยก',
-                sourceDocument: '660201-solutions-1-20.pdf',
-            },
-        ],
     });
     Object.assign(points[6], {
         nameTh: 'แยกบางนา',
@@ -101,10 +71,20 @@ function seedRiskPoints() {
         injuries: 198,
         riskLevel: enums_1.RiskLevel.HIGH,
     });
-    return points;
+    return (0, risk_point_pdf_details_1.withPdfDetails)(points);
 }
 let MockDataService = class MockDataService {
+    kmlRiskPointSource;
     _riskPoints = seedRiskPoints();
+    constructor(kmlRiskPointSource) {
+        this.kmlRiskPointSource = kmlRiskPointSource;
+    }
+    async onModuleInit() {
+        const points = await this.kmlRiskPointSource.fetchRiskPoints();
+        if (points && points.length > 0) {
+            this._riskPoints = (0, risk_point_pdf_details_1.withPdfDetails)(points);
+        }
+    }
     _remediations = [
         {
             remediationId: 'RM-001',
@@ -199,6 +179,7 @@ let MockDataService = class MockDataService {
 };
 exports.MockDataService = MockDataService;
 exports.MockDataService = MockDataService = __decorate([
-    (0, common_1.Injectable)()
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [kml_risk_point_source_service_1.KmlRiskPointSource])
 ], MockDataService);
 //# sourceMappingURL=mock-data.service.js.map

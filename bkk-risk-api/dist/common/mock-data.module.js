@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MockDataModule = void 0;
 const common_1 = require("@nestjs/common");
+const kml_risk_point_source_service_1 = require("./kml-risk-point-source.service");
 const mock_data_service_1 = require("./mock-data.service");
 let MockDataModule = class MockDataModule {
 };
@@ -15,7 +16,7 @@ exports.MockDataModule = MockDataModule;
 exports.MockDataModule = MockDataModule = __decorate([
     (0, common_1.Global)(),
     (0, common_1.Module)({
-        providers: [mock_data_service_1.MockDataService],
+        providers: [mock_data_service_1.MockDataService, kml_risk_point_source_service_1.KmlRiskPointSource],
         exports: [mock_data_service_1.MockDataService],
     })
 ], MockDataModule);
